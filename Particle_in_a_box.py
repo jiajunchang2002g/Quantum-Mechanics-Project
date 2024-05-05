@@ -5,16 +5,17 @@ from matplotlib.animation import FuncAnimation
 #constants
 L = 10
 sigma = 1
-s = sigma / L
+s = sigma / L                               # 0.1
 hbar = 1
 p0 = 1e2
-p = L * p0 / hbar  # good p is 1e3
+p = L * p0 / hbar                           # good p is 1e3
 m = 1
-w0 = np.pi**2 * hbar / ( 2 * m * L**2 ) # good w0 is 1e-2
-N = 45 # good N is 45 for good check_sum to 1e-5
+w0 = np.pi**2 * hbar / ( 2 * m * L**2 )     # good w0 is 1e-2
+N = 45                                      # good N is 45 for good check_sum to 1e-5
+ANIMATION_SPD = 0.25
 
 def cn_integral(n, s, p):
-    y = np.linspace(-0.5, 0.5, 70)  # Discretize the interval [-1/2, 1/2]
+    y = np.linspace(-0.5, 0.5, 70)  
     cos_term = np.cos(n * np.pi * y)
     exp_term = np.exp( -( np.power( ( y / (2 * s ) ), 2) ) )
     integrand = cos_term * np.cos(p * y) * exp_term
@@ -22,7 +23,7 @@ def cn_integral(n, s, p):
     return  constant * np.trapz(integrand, y)
 
 def dn_integral(n, s, p):
-    y = np.linspace(-0.5, 0.5, 70)  # Discretize the interval [-1/2, 1/2]
+    y = np.linspace(-0.5, 0.5, 70)  
     sin_term = np.sin(n * np.pi * y)
     exp_term = np.exp(-np.power( (y / (2 * s) ), 2 ) )
     integrand = 1j * sin_term * np.sin(p * y) * exp_term
@@ -56,7 +57,13 @@ def f(x, t):
         di = dn[even_i]
         ui = u(odd_i, x)
         vi = v(even_i, x)
-        sum += np.power(np.abs(ci), 2) * np.power(ui,2) + np.power(np.abs(di), 2) * np.power(vi, 2) - 2 * ci * abs(di) * ui * vi * np.sin( (even_i + odd_i) * w0 * t)
+        # 3 steps to prevent overflow
+        sum += np.power(np.abs(ci), 2) * np.power(ui,2) 
+        sum += np.power(np.abs(di), 2) * np.power(vi, 2) 
+        temp = 2 * ci * abs(di)
+        temp *= ui * vi
+        sum -= temp * np.sin( (even_i + odd_i) * w0 * t)
+        # sum -= 2 * ci * abs(di) * ui * vi * np.sin( (even_i + odd_i) * w0 * t)
         for j in range (1, i):
             odd_j = 2 * j - 1
             even_j = 2 * j
@@ -79,22 +86,28 @@ def animate():
         ax.set_ylim(0, 1)
         return line,
     def update(frame):
-        t = frame * 0.15  # Adjust the speed of the animation by changing the factor here
+        t = frame * ANIMATION_SPD  
         y_values = f(x_values, t)
         line.set_data(x_values, y_values)
         return line,
+    ax.plot(x_values, f(x_values, 0), color='gray', linestyle='--') # plot backgroud f(x,0)
     ani = FuncAnimation(fig, update, frames=range(100), init_func=init, blit=True)
     plt.show()
 
 #initialise arrays
-cn = np.zeros(2 * N)  
-dn = np.empty(2 * N + 1, dtype=complex)  
-for  i in range (1, N):
-    odd = 2 * i - 1
-    even = 2 * i
-    cn[odd] = cn_integral(odd, s, p)
-    dn[even] = dn_integral(even, s, p)
-print(w0)
-print(p)
-check_sum()
+
+cn = np.loadtxt('cn.txt')
+dn = np.loadtxt('dn.txt', dtype=complex)
+
+# cn = np.zeros(2 * N)  
+# dn = np.empty(2 * N + 1, dtype=complex)  
+# for  i in range (1, N):
+#     odd = 2 * i - 1
+#     even = 2 * i
+#     cn[odd] = cn_integral(odd, s, p)
+#     dn[even] = dn_integral(even, s, p)
+
+# print(w0)
+# print(p)
+# check_sum()
 animate()
