@@ -1,113 +1,79 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 from matplotlib.animation import FuncAnimation
+from scipy.integrate import quad
 
-#constants
-L = 10
+hbar = 1.0
+m = 1.0
+p0 = 10
+x0 = 0.0
 sigma = 1
-s = sigma / L                               # 0.1
-hbar = 1
-p0 = 1e2
-p = L * p0 / hbar                           # good p is 1e3
-m = 1
-w0 = np.pi**2 * hbar / ( 2 * m * L**2 )     # good w0 is 1e-2
-N = 45                                      # good N is 45 for good check_sum to 1e-5
-ANIMATION_SPD = 0.25
+L = sigma*np.sqrt(-8*np.log(1e-10*sigma*np.sqrt(2*np.pi)))
+n_max = 60  
+t_max = 120
+t_steps = 1000
 
-def cn_integral(n, s, p):
-    y = np.linspace(-0.5, 0.5, 70)  
-    cos_term = np.cos(n * np.pi * y)
-    exp_term = np.exp( -( np.power( ( y / (2 * s ) ), 2) ) )
-    integrand = cos_term * np.cos(p * y) * exp_term
-    constant = np.sqrt(np.sqrt(2) / np.sqrt(np.pi)) * np.sqrt(1 / s)
-    return  constant * np.trapz(integrand, y)
+def UE_odd(n, x, L):
+    return np.sqrt(2/L) * np.cos(n * np.pi * x / L)
 
-def dn_integral(n, s, p):
-    y = np.linspace(-0.5, 0.5, 70)  
-    sin_term = np.sin(n * np.pi * y)
-    exp_term = np.exp(-np.power( (y / (2 * s) ), 2 ) )
-    integrand = 1j * sin_term * np.sin(p * y) * exp_term
-    constant = np.sqrt(np.sqrt(2) / np.sqrt(np.pi)) * np.sqrt(1 / s)
-    return constant * np.trapz(integrand, y)
+def UE_even(n, x, L):
+    return np.sqrt(2/L) * np.sin(n * np.pi * x / L)
 
-def check_sum():
-    sum = 0
-    for i in range(1,N):
-        cn = cn_integral(2 * i - 1, s, p)
-        dn = dn_integral(2 * i, s, p)
-        sum += np.abs(cn)**2 + np.abs(dn)**2 
-    print(sum)
+def energy_n(n, L, hbar, m):
+    return (np.pi**2) * (hbar**2) * (n**2) / (2 * m * (L**2))
 
-def u(n, x):
-    cos_term = np.cos(n * np.pi * x / L)
-    coeff = np.sqrt(2 / L)
-    return coeff * cos_term
+def psi_0(x, p0, sigma, x0, hbar):
+    return (1/(np.sqrt(np.sqrt(2*np.pi)*sigma))) * np.exp(1j * p0 * x / hbar) * np.exp(- (x - x0)**2 / (4 * (sigma**2)))
+
     
-def v(n, x):
-    sin_term = np.sin(n * np.pi * x / L)
-    coeff = np.sqrt(2 / L)
-    return coeff * sin_term
+def coefficient_odd(n, p0, sigma, L, hbar): #c_n
+    return (np.sqrt(np.sqrt(2*np.pi)/(L*np.pi*sigma))*quad(lambda x: np.cos((n*np.pi*x)/L)*np.cos(p0*x/hbar)*np.exp(-(x/(2*sigma))**2),-L/2,L/2)[0])
 
-def f(x, t):
-    sum = 0.0
-    for i in range (1, N+1):
-        odd_i = 2 * i - 1
-        even_i = 2 * i 
-        ci = cn[odd_i]
-        di = dn[even_i]
-        ui = u(odd_i, x)
-        vi = v(even_i, x)
-        # 3 steps to prevent overflow
-        sum += np.power(np.abs(ci), 2) * np.power(ui,2) 
-        sum += np.power(np.abs(di), 2) * np.power(vi, 2) 
-        temp = 2 * ci * abs(di)
-        temp *= ui * vi
-        sum -= temp * np.sin( (even_i + odd_i) * w0 * t)
-        # sum -= 2 * ci * abs(di) * ui * vi * np.sin( (even_i + odd_i) * w0 * t)
-        for j in range (1, i):
-            odd_j = 2 * j - 1
-            even_j = 2 * j
-            cj = cn[odd_j]
-            dj = dn[even_j]
-            uj = u(odd_j, x)
-            vj = v(even_j, x)
-            sum += 2 * ci * cj * ui * uj * np.cos( odd_i**2 - odd_j**2 ) * w0 * t
-            sum += 2 * np.abs(di) * np.abs(dj) * vi * vj * np.cos( even_i**2 - even_j**2 ) * w0 * t
-            sum -= 2 * ci * np.abs(dj) * ui * vj * np.sin( odd_i**2 - even_j**2 ) * w0 * t
-            sum -= 2 * cj * np.abs(di) * uj * vi * np.sin( odd_j**2 - even_i**2 ) * w0 * t
-    return sum
+    # quad returns a tuple: 
+    # (results of the integral, absolute error of the integral)
+
+def coefficient_even(n, p0, sigma, L, hbar): #d_n
+    return (1j*np.sqrt(np.sqrt(2*np.pi)/(L*np.pi*sigma))*quad(lambda x: np.sin((n*np.pi*x)/L)*np.sin(p0*x/hbar)*np.exp(-(x/(2*sigma))**2),-L/2,L/2)[0])
+
+def wavefunction(x, t, n_max, p0, sigma,  L, hbar, m):
+    #psi = np.zeros_like(x, dtype=complex) 
+    psi = 0
+    for n in range(1, n_max+1):
+        E_n = energy_n(n, L, hbar, m)
+
+        if n % 2 != 0:  # Odd
+            c_n = coefficient_odd(n, p0, sigma, L, hbar)
+            psi += c_n * UE_odd(n, x, L) * np.exp(-1j * E_n * t)
+
+        else:  # Even
+            d_n = coefficient_even(n, p0, sigma, L, hbar)
+            psi += d_n * UE_even(n, x, L) * np.exp(-1j * E_n * t)
+    return psi
+
+def probability_density(x, t, n_max, p0, sigma,  L, hbar, m):
+    psi = wavefunction(x, t, n_max, p0, sigma,  L, hbar, m)
+    return np.conj(psi) * psi
 
 def animate():
-    x_values = np.linspace(-L, L, 250)
+    x_values = np.linspace(-L/2, L/2, 250)
     fig, ax = plt.subplots()
     line, = ax.plot([], [])
+    plt.gcf().axes[0].axvspan(L/2, L/2+2, alpha=0.2, color='dodgerblue')
+    plt.gcf().axes[0].axvspan(-L/2-2, -L/2, alpha=0.2, color='dodgerblue')
+    title = ax.set_title(f'Probability Density at t = {0:.2f} seconds')
     def init():
         ax.set_xlim(-L, L)
         ax.set_ylim(0, 1)
         return line,
     def update(frame):
-        t = frame * ANIMATION_SPD  
-        y_values = f(x_values, t)
+        t = frame * 0.25  
+        title.set_text(f'Probability Density at t = {t:.2f} seconds')
+        y_values = probability_density(x_values, t, n_max, p0, sigma,  L, hbar, m)
         line.set_data(x_values, y_values)
-        return line,
-    ax.plot(x_values, f(x_values, 0), color='gray', linestyle='--') # plot backgroud f(x,0)
-    ani = FuncAnimation(fig, update, frames=range(100), init_func=init, blit=True)
+        return line, title
+    ax.plot(x_values, probability_density(x_values, 0, n_max, p0, sigma,  L, hbar, m), color='gray', linestyle='--') 
+    ani = FuncAnimation(fig, update, frames=range(100), init_func=init)
     plt.show()
 
-#initialise arrays
-
-cn = np.loadtxt('cn.txt')
-dn = np.loadtxt('dn.txt', dtype=complex)
-
-# cn = np.zeros(2 * N)  
-# dn = np.empty(2 * N + 1, dtype=complex)  
-# for  i in range (1, N):
-#     odd = 2 * i - 1
-#     even = 2 * i
-#     cn[odd] = cn_integral(odd, s, p)
-#     dn[even] = dn_integral(even, s, p)
-
-# print(w0)
-# print(p)
-# check_sum()
 animate()
